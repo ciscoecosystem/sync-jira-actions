@@ -112,6 +112,7 @@ def main():
     if event_name == 'pull_request_target':
         # Also treat pull_request_target events just like issues events for syncing purposes
         # Need to use the PR issue data instead of the pull data
+        event_name = 'issues'
         issue_url = event['pull_request']['_links']['issue']['href']
         print(f'GET {issue_url}')
         data = requests.get(issue_url).json()
@@ -157,7 +158,7 @@ def main():
             'created': handle_comment_created,
             'edited': handle_comment_edited,
             'deleted': handle_comment_deleted,
-        },
+        }
     }
 
     if event_name not in action_handlers:
