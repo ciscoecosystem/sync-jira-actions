@@ -448,6 +448,11 @@ def _get_jira_issue_type(jira, gh_issue):
 
     return None  # updating a field to None seems to cause 'no change' for JIRA
 
+def find_jira_issue(jira, gh_issue):
+    """
+    Look for a JIRA issue which has a remote link to the provided GitHub issue.
+    """
+    return _find_jira_issue(jira, gh_issue, REPO, False, FIND_JIRA_RETRIES)
 
 def _find_jira_issue(jira, gh_issue, gh_repo, make_new=False, retries=FIND_JIRA_RETRIES):
     """Look for a JIRA issue which has a remote link to the provided GitHub issue.

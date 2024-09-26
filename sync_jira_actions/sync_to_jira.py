@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 #
 # Copyright 2019 Espressif Systems (Shanghai) CO LTD
+# Copyright: (c) 2024, Samita Bhattacharjee (@samiib) <samitab@cisco.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +32,8 @@ from sync_issue import handle_issue_opened
 from sync_issue import handle_issue_reopened
 from sync_issue import handle_issue_unlabeled
 from sync_issue import sync_issues_manually
-from sync_pr import sync_remain_prs, find_and_link_pr_issues
+from sync_issue import find_jira_issue
+from sync_pr import sync_remain_prs, find_and_link_pr_issues, check_pr_approval_and_move
 
 
 class _JIRA(JIRA):
@@ -131,8 +133,10 @@ def main():
     is_pr = 'pull_request' in gh_issue
 
     if is_pr and os.environ.get('INPUT_LINK_CLOSING_ISSUES'):
-        if find_and_link_pr_issues(gh_issue):
-            print("Skipping sync for Pull Request linked to synced Issue")
+        jira_keys = find_and_link_pr_issues(gh_issue)
+        if any(jira_keys):
+            check_pr_approval_and_move(jira, gh_issue, jira_keys)
+            print("Skipping sync for Pull Request linked to synced GitHub Issue")
             return
 
     if is_pr and repo.has_in_collaborators(gh_issue['user']['login']) and not has_sync_label:
@@ -143,6 +147,13 @@ def main():
     if sync_label and not has_sync_label:
         print(f'Skipping issue sync because Issue is missing the {sync_label} label')
         return
+
+    # If syncing enabled for a standalone PR, check aproval before action handlers to
+    # handle appropriate transitions
+    if is_pr:
+        issue = find_jira_issue(jira, gh_issue)
+        if issue is not None:
+            check_pr_approval_and_move(jira, gh_issue, [issue.key])
 
     action_handlers = {
         'issues': {

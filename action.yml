@@ -30,6 +30,12 @@ inputs:
       Find issues that a PR will close then add the Jira issue number to the title
       of the PR. When a closing issue is found syncing will be skipped for the PR.
     required: false
+  minimum_approvals:
+    description: >
+      The minimum number of approvals required on a pull request before determining 
+      that is is ready to merge.
+    required: false
+    default: '3'
 runs:
   using: "docker"
   image: "Dockerfile"
