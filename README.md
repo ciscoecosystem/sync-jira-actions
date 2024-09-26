@@ -8,7 +8,7 @@
    <img alt="tests" src="https://github.com/espressif/sync-jira-actions/actions/workflows/python-test.yml/badge.svg" />
    <img alt="codeql" src="https://github.com/espressif/sync-jira-actions/actions/workflows/github-code-scanning/codeql/badge.svg?branch=v1" />
 </div>
-GitHub to JIRA Sync GitHub Action is a solution for one-way synchronization of GitHub issues into Espressif JIRA projects.
+GitHub to JIRA Sync GitHub Action is a solution for one-way synchronization of GitHub issues into JIRA projects.
 <br>
 <br>
 This action automates the integration of your GitHub repositories with JIRA projects by automatically creating corresponding JIRA tickets for new GitHub issues and pull requests, as well as managing comments within these issues and pull requests from external contributors.
