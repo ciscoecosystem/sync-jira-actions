@@ -121,6 +121,23 @@ def main():
         print(json.dumps(data, indent=4))
         event['issue'] = data
 
+    if event_name == 'workflow_run':
+        # Also treat workflow_run events triggered from pull_request_review just like issues events for syncing purposes
+        # Need to use the PR issue data instead of the workflow data
+        run_data = event.get('workflow_run', {})
+        run_event = run_data.get('event')
+        if run_event == 'pull_request_review':
+            event_name = 'issues'
+            pr_url = run_data['pull_requests'][0]['url']
+            print(f'GET {pr_url}')
+            pr_data = requests.get(pr_url).json()
+            print(json.dumps(pr_data, indent=4))
+            issue_url = pr_data['issue_url']
+            print(f'GET {issue_url}')
+            data = requests.get(issue_url).json()
+            print(json.dumps(data, indent=4))
+            event['issue'] = data
+
     sync_label = os.environ.get('INPUT_SYNC_LABEL')
     gh_issue = event['issue']
     has_sync_label = sync_label in [l['name'] for l in gh_issue["labels"]]
