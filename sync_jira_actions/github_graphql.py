@@ -19,6 +19,7 @@ import requests
 from collections import namedtuple
 
 GITHUB_GRAPHQL = 'https://api.github.com/graphql'
+GITHUB_BASE_REST_API = 'https://api.github.com/repos'
 
 def __post_query(token, query, vars):
     headers = {"Authorization": f"Bearer {token}"}
@@ -91,3 +92,25 @@ def get_pr_review_status(token, owner, repo, pr):
     reviews = [review.get('state') for review in pr_data.get("latestReviews").get("nodes")]
     result = {"title": pr_data.get('title'), "outcome": pr_data.get('reviewDecision'), "reviews": reviews}
     return namedtuple('Struct', result.keys())(*result.values())
+
+
+def get_recently_updated_pr_url(token, owner, repo):
+    vars = {"owner": owner, "repo": repo}
+    query = """
+        query($owner:String!, $repo:String!) {
+            repository (owner: $owner, name: $repo) {
+                pullRequests (last:1 orderBy: {field: UPDATED_AT, direction: ASC} ) {
+                    nodes {
+                        title
+                        number
+                        updatedAt
+                    }
+                }
+            }
+        }
+    """
+    data = __post_query(token, query, vars)
+    nodes = data.get('repository', {}).get('pullRequests', {}).get('nodes', None)
+    if nodes is None:
+        return None
+    return f"{GITHUB_BASE_REST_API}/{owner}/{repo}/issues/{nodes[0].get('number')}"
