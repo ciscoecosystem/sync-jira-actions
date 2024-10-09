@@ -34,6 +34,7 @@ from sync_issue import handle_issue_unlabeled
 from sync_issue import sync_issues_manually
 from sync_issue import find_jira_issue
 from sync_pr import sync_remain_prs, find_and_link_pr_issues, check_pr_approval_and_move
+from github_graphql import get_recently_updated_pr_url
 
 
 class _JIRA(JIRA):
@@ -103,6 +104,10 @@ def main():
     # The name of the webhook event that triggered the workflow.
     action = event['action']
 
+    token = os.environ['GITHUB_TOKEN']
+    github = Github(token)
+    repo = github.get_repo(os.environ['GITHUB_REPOSITORY'])
+
     if event_name == 'pull_request':
         # Treat pull request events just like issues events for syncing purposes
         # (we can check the 'pull_request' key in the "issue" later to know if this is an issue or a PR)
@@ -128,12 +133,8 @@ def main():
         run_event = run_data.get('event')
         if run_event == 'pull_request_review':
             event_name = 'issues'
-            pr_url = run_data['pull_requests'][0]['url']
-            print(f'GET {pr_url}')
-            pr_data = requests.get(pr_url).json()
-            print(json.dumps(pr_data, indent=4))
-            issue_url = pr_data['issue_url']
-            print(f'GET {issue_url}')
+            issue_url = get_recently_updated_pr_url(token, repo.owner.login, repo.name)
+            print(f'GET Last Updated PR: {issue_url}')
             data = requests.get(issue_url).json()
             print(json.dumps(data, indent=4))
             event['issue'] = data
@@ -144,9 +145,6 @@ def main():
 
     # Don't sync a PR if user/creator is a collaborator
     # unless a sync label is used and is present.
-    token = os.environ['GITHUB_TOKEN']
-    github = Github(token)
-    repo = github.get_repo(os.environ['GITHUB_REPOSITORY'])
     is_pr = 'pull_request' in gh_issue
 
     if is_pr and os.environ.get('INPUT_LINK_CLOSING_ISSUES'):
