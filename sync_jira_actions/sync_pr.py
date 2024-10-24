@@ -26,6 +26,28 @@ from github_graphql import find_closing_issues, get_pr_review_status
 # The minimum number of approvals before a PR is ready to merge.
 MINIMUM_APPROVALS = int(os.environ.get('INPUT_MINIMUM_APPROVALS', 3))
 
+SIMPLE_TRANSITIONS = {
+    "review_status": "Review in progress",
+    "approved_status": "Reviewer Approved",
+    "approved": "Reviewer Approved",
+    "progress": "In Progress",
+    "review": "Review in progress"
+}
+
+TRANSITION_MAP = {
+    "GitHub Issue": {
+        "review_status": "Review in progress",
+        "approved_status": "Reviewer Approved",
+        "approved": "Approved",
+        "progress": "Changes Requested",
+        "review": "Requires re-review"
+    },
+    "Task": SIMPLE_TRANSITIONS,
+    "Sub-task": SIMPLE_TRANSITIONS,
+    "Story": SIMPLE_TRANSITIONS,
+    "Bug": SIMPLE_TRANSITIONS
+}
+
 def sync_remain_prs(jira):
     """
     Sync remain PRs (i.e. PRs without any comments) to Jira
@@ -89,16 +111,25 @@ def check_pr_approval_and_move(jira: JIRA, gh_issue, jira_keys):
     pr_number = int(gh_issue['number'])
     approved = __check_pr_approval_status(pr_number, repo, token)
     for key in jira_keys:
-        issue_status = str(jira.issue(key).get_field("status"))
+        issue = jira.issue(key)
+        issue_status = str(issue.get_field("status"))
+        issue_type = str(issue.get_field("issuetype"))
         print(f"{key}: status '{issue_status}' approved '{approved}'")
-        if approved and issue_status == "Review in progress":
-            print(f"{key}: Transition to Approved")
-            jira.transition_issue(key, "Approved")
+        transitions = TRANSITION_MAP[issue_type]
+        if approved is None and issue_status == transitions["approved_status"]:
+            print(f"{key}: Transition from Approved to Review")
+            jira.transition_issue(key, transitions["review"])
+            jira.add_comment(key, "The PR linked to this issue has new changes or dismissed reviews and moved back to review.")
+        elif approved is None:
+            print(f"PR review is in progress. Skipping...")
+        elif approved and issue_status == transitions["review_status"]:
+            print(f"{key}: Transition from Review to Approved")
+            jira.transition_issue(key, transitions["approved"])
             jira.add_comment(key, "The PR linked to this issue has met approval criteria and is ready to merge.")
-        if not approved and issue_status == "Reviewer Approved":
-            print(f"{key}: Transition back to review in progress")
-            jira.transition_issue(key, "Requires re-review")
-            jira.add_comment(key, "The PR linked to this issue has new changes requested and moved back to review.")
+        elif not approved and issue_status in [transitions["review_status"], transitions["approved_status"]]:
+            print(f"{key}: Transition back to in progress")
+            jira.transition_issue(key, transitions["progress"])
+            jira.add_comment(key, "The PR linked to this issue has new changes requested and moved back in progress.")
 
 def __check_pr_approval_status(pr, repo, token):
     """
@@ -106,6 +137,18 @@ def __check_pr_approval_status(pr, repo, token):
     """
     status = get_pr_review_status(token, repo.owner.login, repo.name, pr)
     approved = status.outcome == "APPROVED"
+    changes_requested = any([r for r in status.reviews if r == "CHANGES_REQUESTED"])
     num_approved = len([r for r in status.reviews if r == "APPROVED"])
     print(f"PR Status: {status.outcome} with {num_approved}/{MINIMUM_APPROVALS} approvals")
-    return approved and num_approved >= MINIMUM_APPROVALS
+    
+    # Not approved and a reviewer has active requested changes
+    if not approved and changes_requested:
+        return False
+    # Approved and meets minimum approvals
+    elif approved and num_approved >= MINIMUM_APPROVALS:
+        return True
+    # Review is currently in progress
+    elif not approved and not changes_requested:
+        return None
+    
+    
