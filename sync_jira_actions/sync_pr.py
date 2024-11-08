@@ -17,6 +17,7 @@
 #
 import os
 import re
+from enum import Enum
 from jira import JIRA
 from github import Github
 from sync_issue import _create_jira_issue
@@ -47,6 +48,11 @@ TRANSITION_MAP = {
     "Story": SIMPLE_TRANSITIONS,
     "Bug": SIMPLE_TRANSITIONS
 }
+
+class ApprovalStatus(Enum):
+    APPROVED = 1
+    CHANGES_REQUESTED = 2
+    REVIEW_IN_PROGRESS = 3
 
 def sync_remain_prs(jira):
     """
@@ -109,24 +115,24 @@ def check_pr_approval_and_move(jira: JIRA, gh_issue, jira_keys):
     github = Github(os.environ['GITHUB_TOKEN'])
     repo = github.get_repo(os.environ['GITHUB_REPOSITORY'])
     pr_number = int(gh_issue['number'])
-    approved = __check_pr_approval_status(pr_number, repo, token)
+    pr_status = __check_pr_approval_status(pr_number, repo, token)
     for key in jira_keys:
         issue = jira.issue(key)
         issue_status = str(issue.get_field("status"))
         issue_type = str(issue.get_field("issuetype"))
-        print(f"{key}: status '{issue_status}' approved '{approved}'")
+        print(f"{key}: status '{issue_status}' approved '{pr_status}'")
         transitions = TRANSITION_MAP[issue_type]
-        if approved is None and issue_status == transitions["approved_status"]:
+        if pr_status is ApprovalStatus.REVIEW_IN_PROGRESS and issue_status == transitions["approved_status"]:
             print(f"{key}: Transition from Approved to Review")
             jira.transition_issue(key, transitions["review"])
             jira.add_comment(key, "The PR linked to this issue has new changes or dismissed reviews and moved back to review.")
-        elif approved is None:
+        elif pr_status is ApprovalStatus.REVIEW_IN_PROGRESS:
             print(f"PR review is in progress. Skipping...")
-        elif approved and issue_status == transitions["review_status"]:
+        elif pr_status is ApprovalStatus.APPROVED and issue_status == transitions["review_status"]:
             print(f"{key}: Transition from Review to Approved")
             jira.transition_issue(key, transitions["approved"])
             jira.add_comment(key, "The PR linked to this issue has met approval criteria and is ready to merge.")
-        elif not approved and issue_status in [transitions["review_status"], transitions["approved_status"]]:
+        elif pr_status is ApprovalStatus.CHANGES_REQUESTED and issue_status in [transitions["review_status"], transitions["approved_status"]]:
             print(f"{key}: Transition back to in progress")
             jira.transition_issue(key, transitions["progress"])
             jira.add_comment(key, "The PR linked to this issue has new changes requested and moved back in progress.")
@@ -143,12 +149,12 @@ def __check_pr_approval_status(pr, repo, token):
     
     # Not approved and a reviewer has active requested changes
     if not approved and changes_requested:
-        return False
+        return ApprovalStatus.CHANGES_REQUESTED
     # Approved and meets minimum approvals
     elif approved and num_approved >= MINIMUM_APPROVALS:
-        return True
+        return ApprovalStatus.APPROVED
     # Review is currently in progress
     elif not approved and not changes_requested:
-        return None
+        return ApprovalStatus.REVIEW_IN_PROGRESS
     
     
