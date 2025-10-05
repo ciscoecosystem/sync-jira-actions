@@ -12,7 +12,7 @@
     readme = "README.md"
     requires-python = ">=3.11"
 
-    dependencies = ["PyGithub==2.2.0", "jira==3.6.0"]
+    dependencies = ["PyGithub==2.2.0", "jira==3.10.5"]
 
     [project.optional-dependencies]
         dev = [
