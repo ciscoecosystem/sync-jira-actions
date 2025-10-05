@@ -471,7 +471,7 @@ def _find_jira_issue(jira, gh_issue, gh_repo, make_new=False, retries=FIND_JIRA_
     url = gh_issue['html_url']
     jql_query = f'issue in issuesWithRemoteLinksByGlobalId("{url}") order by updated desc'
     print(f'JQL query: {jql_query}')
-    res = jira.search_issues(jql_query)
+    res = jira.enhanced_search_issues(jql_query)
     if not res:
         print(f"WARNING: No JIRA issues have a remote link with globalID '{url}'")
 
