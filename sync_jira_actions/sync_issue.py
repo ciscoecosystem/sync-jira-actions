@@ -469,7 +469,7 @@ def _find_jira_issue(jira, gh_issue, gh_repo, make_new=False, retries=FIND_JIRA_
     # and they're not always processed in order.
     """
     url = gh_issue['html_url']
-    jql_query = f'issue in issuesWithRemoteLinksByGlobalId("{url}") order by updated desc'
+    jql_query = f'issue in issuesWithRemoteLinksByGlobalId("{url}") OR issue in workItemsWithRemoteLinksByGlobalId("{url}") order by updated desc'
     print(f'JQL query: {jql_query}')
     res = jira.enhanced_search_issues(jql_query)
     if not res:
