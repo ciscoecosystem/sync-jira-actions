@@ -85,7 +85,6 @@ def find_and_link_pr_issues(gh_issue):
     This allows auto linking of PR's to related Jira issues.
     """
     token = os.environ['GITHUB_TOKEN']
-    project = os.environ['JIRA_PROJECT']
     github = Github(os.environ['GITHUB_TOKEN'])
     repo = github.get_repo(os.environ['GITHUB_REPOSITORY'])
     pr_number = int(gh_issue['number'])
@@ -94,14 +93,14 @@ def find_and_link_pr_issues(gh_issue):
     jira_keys = []
     for issue in closing_issues:
         title = issue.get('title')
-        match = re.search(f'.*({project}-\d*).*', title)
+        match = re.search(f'.*\(([A-Z]{3,4}-\d+)\).*', title)
         if match:
             jira_key = match.group(1)
             print(f"Found linked issue: {jira_key}")
             jira_keys.append(jira_key)
     if len(jira_keys) > 0:
-        new_pr_title = re.sub(f'{project}-\d*', '', pr_title)
-        new_pr_title = re.sub('\(\s*\)', '', new_pr_title).strip()
+        new_pr_title = re.sub(r'[A-Z]{3,4}-\d+', '', pr_title)
+        new_pr_title = re.sub(r'\(\s*\)', '', new_pr_title).strip()
         new_pr_title = f'{new_pr_title} ({" ".join(jira_keys)})'
         print(f'New PR title: {new_pr_title}')
         repo.get_issue(pr_number).edit(title=new_pr_title)
