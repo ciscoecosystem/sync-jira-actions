@@ -22,6 +22,8 @@ import subprocess
 import tempfile
 import time
 
+from logging_utils import is_debug
+
 from github import Github
 from github.GithubException import GithubException
 from jira import JIRAError
@@ -470,7 +472,8 @@ def _find_jira_issue(jira, gh_issue, gh_repo, make_new=False, retries=FIND_JIRA_
     """
     url = gh_issue['html_url']
     jql_query = f'issue in issuesWithRemoteLinksByGlobalId("{url}") OR issue in workItemsWithRemoteLinksByGlobalId("{url}") order by updated desc'
-    print(f'JQL query: {jql_query}')
+    if is_debug():
+        print(f'JQL query: {jql_query}')  # Print the JQL query only in debug mode
     res = jira.enhanced_search_issues(jql_query)
     if not res:
         print(f"WARNING: No JIRA issues have a remote link with globalID '{url}'")

@@ -32,7 +32,9 @@ def mock_jira_client():
 
 @pytest.fixture
 def sync_issue_module(github_client_mock):
+    import sys
     from importlib import reload
+    sys.path.insert(0, 'sync_jira_actions')  # Ensure bare-name modules (e.g. logging_utils) are importable on reload
     from sync_jira_actions import sync_issue
 
     reload(sync_issue)  # Reload to apply the mocked Github client

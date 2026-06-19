@@ -19,6 +19,8 @@ import json
 import os
 import requests
 
+from logging_utils import is_debug
+
 from github import Github
 from jira import JIRA
 from sync_issue import handle_comment_created
@@ -58,11 +60,13 @@ def main():
     # Check if the JIRA_PASS is token or password
     token_or_pass = os.environ['JIRA_PASS']
     if token_or_pass.startswith('token:'):
-        print('Authenticating with JIRA_TOKEN ...')
+        if is_debug():
+            print('Authenticating with JIRA_TOKEN ...')
         token = token_or_pass[6:]  # Strip the 'token:' prefix
         jira = _JIRA(os.environ['JIRA_URL'], token_auth=token)
     else:
-        print('Authenticating with JIRA_USER and JIRA_PASS ...')
+        if is_debug():
+            print('Authenticating with JIRA_USER and JIRA_PASS ...')
         jira = _JIRA(os.environ['JIRA_URL'], basic_auth=(os.environ['JIRA_USER'], token_or_pass))
 
     # Check if it's a cron job
@@ -77,7 +81,8 @@ def main():
     # The path of the file with the complete webhook event payload. For example, /github/workflow/event.json.
     with open(os.environ['GITHUB_EVENT_PATH'], 'r', encoding='utf-8') as file:
         event = json.load(file)
-        print(json.dumps(event, indent=4))
+        if is_debug():
+            print(json.dumps(event, indent=4))
 
     # Check if event is workflow_dispatch and action is mirror issues.
     # If so, run manual mirroring and skip rest of the script. Works both for issues and pull requests.
@@ -123,7 +128,8 @@ def main():
         issue_url = event['pull_request']['_links']['issue']['href']
         print(f'GET {issue_url}')
         data = requests.get(issue_url).json()
-        print(json.dumps(data, indent=4))
+        if is_debug():
+            print(json.dumps(data, indent=4))
         event['issue'] = data
 
     if event_name == 'workflow_run':
@@ -136,7 +142,8 @@ def main():
             issue_url = get_recently_updated_pr_url(token, repo.owner.login, repo.name)
             print(f'GET Last Updated PR: {issue_url}')
             data = requests.get(issue_url).json()
-            print(json.dumps(data, indent=4))
+            if is_debug():
+                print(json.dumps(data, indent=4))
             event['issue'] = data
 
     sync_label = os.environ.get('INPUT_SYNC_LABEL')
