@@ -72,14 +72,15 @@
 
 
     [tool.pytest.ini_options]
-        addopts          = "-s --log-cli-level DEBUG --cov=. --cov-report=term"
+        addopts          = "-s --log-cli-level DEBUG --cov=sync_jira_actions --cov-report=term"
         python_classes   = ["Test*"]
         python_files     = ["test_*.py"]
         python_functions = ["test_*"]
         testpaths        = ["tests"]
 
     [tool.coverage.run]
-        omit = ["__*__.py", "tests/*"]
+        source = ["sync_jira_actions"]
+        omit = ["sync_jira_actions/version.py"]
 
 [tool.commitizen]
     annotated_tag            = true
