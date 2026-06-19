@@ -49,7 +49,12 @@ def test_handle_issue_opened_creates_jira_issue(sync_issue_module, github_client
             'labels': [],
             'html_url': 'https://github.com/user/repo/issues/123',
             'state': 'open',
-        }
+        },
+        'repository': {
+            'full_name': 'fake/repo',
+            'name': 'repo',
+            'owner': {'login': 'fake'},
+        },
     }
 
     with (
@@ -77,6 +82,11 @@ def test_handle_issue_labeled_adds_label(sync_issue_module, github_client_mock, 
             'state': 'open',
         },
         'label': {'name': 'bug'},
+        'repository': {
+            'full_name': 'fake/repo',
+            'name': 'repo',
+            'owner': {'login': 'fake'},
+        },
     }
 
     # Adjusting the mock to behave more like a list that can be appended to

@@ -35,11 +35,12 @@ def test_not_running_in_github_action_context(capsys, sync_to_jira_main, monkeyp
     assert 'Not running in GitHub action context, nothing to do' in captured.out
 
 
-def test_not_espressif_repo(capsys, sync_to_jira_main, monkeypatch):
+def test_no_jira_url_configured(capsys, sync_to_jira_main, monkeypatch):
     monkeypatch.setenv('GITHUB_REPOSITORY', 'other/repo')
+    monkeypatch.delenv('JIRA_URL', raising=False)
     sync_to_jira_main()
     captured = capsys.readouterr()
-    assert 'Not an Espressif repo, nothing to sync to JIRA' in captured.out
+    assert 'No Jira URL configured, nothing to do' in captured.out
 
 
 def test_handle_issue_opened_event(mock_environment, sync_to_jira_main, monkeypatch):
@@ -50,6 +51,7 @@ def test_handle_issue_opened_event(mock_environment, sync_to_jira_main, monkeypa
             'title': 'Test issue',
             'body': 'This is a test issue',
             'user': {'login': 'testuser'},
+            'labels': [],
             'html_url': 'https://github.com/espressif/esp-idf/issues/1',
         },
     }
