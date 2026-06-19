@@ -4,9 +4,9 @@
   <br>
   <br>
   <!-- GitHub Badges -->
-   <img alt="release" src="https://img.shields.io/github/v/release/espressif/sync-jira-actions" />
-   <img alt="tests" src="https://github.com/espressif/sync-jira-actions/actions/workflows/python-test.yml/badge.svg" />
-   <img alt="codeql" src="https://github.com/espressif/sync-jira-actions/actions/workflows/github-code-scanning/codeql/badge.svg?branch=v1" />
+   <img alt="release" src="https://img.shields.io/github/v/release/ciscoecosystem/sync-jira-actions" />
+   <img alt="tests" src="https://github.com/ciscoecosystem/sync-jira-actions/actions/workflows/python-test.yml/badge.svg" />
+   <img alt="codeql" src="https://github.com/ciscoecosystem/sync-jira-actions/actions/workflows/github-code-scanning/codeql/badge.svg?branch=v1" />
 </div>
 GitHub to JIRA Sync GitHub Action is a solution for one-way synchronization of GitHub issues into JIRA projects.
 <br>
@@ -30,11 +30,22 @@ This action automates the integration of your GitHub repositories with JIRA proj
   - [Syncing New Issues to JIRA](#syncing-new-issues-to-jira)
   - [Syncing New Issue Comments to JIRA](#syncing-new-issue-comments-to-jira)
   - [Syncing New Pull Requests to JIRA](#syncing-new-pull-requests-to-jira)
+  - [Syncing Pull Request Review Status to JIRA](#syncing-pull-request-review-status-to-jira)
+  - [Using a Sync Label to Gate Syncing](#using-a-sync-label-to-gate-syncing)
 - [Manually Syncing Issues and Pull Requests to JIRA](#manually-syncing-issues-and-pull-requests-to-jira)
   - [Configuration for Manual Sync](#configuration-for-manual-sync)
   - [Workflow Setup](#workflow-setup)
 - [Environment Variables and Secrets Configuration](#environment-variables-and-secrets-configuration)
   - [Important Consideration:](#important-consideration)
+  - [Action Inputs](#action-inputs)
+- [Security](#security)
+  - [Never interpolate workflow outputs into `run:` steps](#never-interpolate-workflow-outputs-into-run-steps)
+  - [Do not check out and run untrusted PR code in the same job](#do-not-check-out-and-run-untrusted-pr-code-in-the-same-job)
+  - [Use least-privilege permissions](#use-least-privilege-permissions)
+  - [Gate on a trusted label](#gate-on-a-trusted-label)
+  - [Use per-item concurrency with `cancel-in-progress`](#use-per-item-concurrency-with-cancel-in-progress)
+  - [Pin to a commit SHA](#pin-to-a-commit-sha)
+  - [Trim `pull_request_target` activity types](#trim-pull_request_target-activity-types)
 - [Project Issues](#project-issues)
 - [Contributing](#contributing)
 
@@ -44,9 +55,12 @@ This action automates the integration of your GitHub repositories with JIRA proj
 - **Markdown Conversion**: The body of the GitHub issue is converted to JIRA Wiki format using [markdown2confluence](http://chunpu.github.io/markdown2confluence/browser/).
 - **Custom Field Mapping**: A JIRA custom field named "GitHub Reference" is populated with the URL of the GitHub issue.
 - **Issue Title Sync**: The title of the GitHub issue is updated to include the JIRA issue key.
-- **Bi-directional Comment Sync**: Comments added to a GitHub issue are mirrored in the corresponding JIRA issue. Edits and deletions are also reflected.
+- **Comment Sync (GitHub → JIRA)**: Comments added to a GitHub issue are mirrored in the corresponding JIRA issue. Edits and deletions are also reflected.
 - **Label Synchronization**: Labels added or removed from the GitHub issue are similarly updated in the JIRA issue.
 - **Remote Issue Link**: After syncing, a [Remote Issue Link](https://developer.atlassian.com/server/jira/platform/creating-remote-issue-links/) is created on the JIRA issue for easy reference back to the GitHub issue.
+- **PR Review Status Sync**: Pull request review approvals, change requests, and dismissals automatically transition the linked JIRA issue between workflow states (e.g. "Review in progress", "Reviewer Approved", "Changes Requested").
+- **Label-gated Sync**: Optionally require a specific label (via `sync_label`) to be present on an issue or PR before it is synced to JIRA.
+- **PR-to-Issue Linking**: When `link_closing_issues` is enabled, the action automatically detects GitHub issues that a PR will close, appends the corresponding JIRA key to the PR title, and transitions the JIRA issue based on PR review status.
 
 ## 'Synced From' Link Details
 
@@ -95,7 +109,7 @@ There are certain limitations to the data and events that can be synchronized:
 ### What's Not Synced
 
 - **Labels**: The action does not sync labels between GitHub and JIRA, with the exception of labels that match JIRA issue types. This means that general labels used for categorization or prioritization in GitHub won't automatically reflect in JIRA.
-- **Transitions**: Changes in the status of a GitHub issue, such as closing, reopening, or deleting, do not automatically result in the corresponding transition of the JIRA issue's status. Instead, these actions result in a comment being added to the linked JIRA issue to record the event. This design choice accounts for scenarios where a GitHub issue might be closed by its reporter, but the underlying problem it documents still requires attention and resolution within the JIRA project.
+- **Transitions**: Changes in the status of a GitHub issue, such as closing, reopening, or deleting, do not automatically result in the corresponding transition of the JIRA issue's status. Instead, these actions result in a comment being added to the linked JIRA issue to record the event. This design choice accounts for scenarios where a GitHub issue might be closed by its reporter, but the underlying problem it documents still requires attention and resolution within the JIRA project. Note that pull request review events (approvals, change requests) _do_ trigger JIRA status transitions — see [PR Review Status Sync](#syncing-pull-request-review-status-to-jira).
 
 ## Usage Instructions for GitHub to JIRA Issue Sync Action
 
@@ -109,16 +123,22 @@ Automatically creates a corresponding JIRA issue when a new issue is opened in G
 name: Sync issues to Jira
 
 on: issues
-concurrency: jira_issues
+
+concurrency:
+  group: jira-sync-${{ github.event.issue.number }}
+  cancel-in-progress: true
 
 jobs:
   sync_issues_to_jira:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
 
       - name: Sync GitHub issues to Jira project
-        uses: espressif/sync-jira-actions@v1
+        uses: ciscoecosystem/sync-jira-actions@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JIRA_PASS: ${{ secrets.JIRA_PASS }}
@@ -134,12 +154,75 @@ Ensures that comments made on GitHub issues are also reflected in the correspond
 
 ```yaml
 name: Sync issue comments to JIRA
+
 on: issue_comment
+
+concurrency:
+  group: jira-sync-comment-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  sync_issue_comments_to_jira:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync GitHub issue comments to Jira project
+        uses: ciscoecosystem/sync-jira-actions@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JIRA_PASS: ${{ secrets.JIRA_PASS }}
+          JIRA_PROJECT: SOMEPROJECT
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_USER: ${{ secrets.JIRA_USER }}
 ```
 
 ### Syncing New Pull Requests to JIRA
 
-Due to security reasons related to the privileges of PR submitter's repositories, syncing pull requests requires a different approach, using a cron job to regularly check for and sync new pull requests.
+There are two approaches for syncing pull requests, depending on your security requirements.
+
+#### Option A — `pull_request_target` (recommended for forks)
+
+The `pull_request_target` event runs with repository secrets but executes the base-branch workflow, making it safe for fork PRs **as long as you do not check out and execute the PR code** (see [Security](#security)).
+
+```yaml
+name: Sync PRs to Jira
+
+on:
+  pull_request_target:
+    types: [opened, edited, closed, reopened, labeled, unlabeled]
+
+concurrency:
+  group: jira-sync-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  sync_prs_to_jira:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync PRs to Jira project
+        uses: ciscoecosystem/sync-jira-actions@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JIRA_PASS: ${{ secrets.JIRA_PASS }}
+          JIRA_PROJECT: SOMEPROJECT # define the JIRA project here
+          JIRA_COMPONENT: SOMECOMPONENT # define (optional) JIRA component here
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_USER: ${{ secrets.JIRA_USER }}
+```
+
+#### Option B — Cron job catch-up
+
+A scheduled cron job can catch any PRs that were missed by event-driven workflows. This approach scans all open PRs and creates JIRA issues for any that are not yet synced.
 
 ```yaml
 name: Sync remaining PRs to Jira
@@ -147,16 +230,23 @@ name: Sync remaining PRs to Jira
 on:
   schedule:
     - cron: "0 * * * *"
-concurrency: jira_issues
+
+concurrency:
+  group: jira-sync-cron-${{ github.repository }}
+  cancel-in-progress: true
 
 jobs:
   sync_prs_to_jira:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
       - name: Sync PRs to Jira project
-        uses: espressif/sync-jira-actions@v1
+        uses: ciscoecosystem/sync-jira-actions@v1
         with:
           cron_job: true
         env:
@@ -164,6 +254,90 @@ jobs:
           JIRA_PASS: ${{ secrets.JIRA_PASS }}
           JIRA_PROJECT: SOMEPROJECT # define the JIRA project here
           JIRA_COMPONENT: SOMECOMPONENT # define (optional) JIRA component here
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_USER: ${{ secrets.JIRA_USER }}
+```
+
+### Syncing Pull Request Review Status to JIRA
+
+When a PR linked to a JIRA issue receives reviews, the action can automatically transition the JIRA issue between workflow states. This uses the `workflow_run` event triggered by `pull_request_review`.
+
+The minimum number of approvals required before the JIRA issue transitions to "Reviewer Approved" is controlled by the `minimum_approvals` input (default: `3`).
+
+```yaml
+name: Sync PR review status to Jira
+
+on:
+  workflow_run:
+    workflows: ["<name-of-your-pr-workflow>"]
+    types: [completed]
+
+concurrency:
+  group: jira-sync-review-${{ github.event.workflow_run.id }}
+  cancel-in-progress: true
+
+jobs:
+  sync_pr_review_to_jira:
+    if: github.event.workflow_run.event == 'pull_request_review'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync PR review status to Jira
+        uses: ciscoecosystem/sync-jira-actions@v1
+        with:
+          minimum_approvals: 3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JIRA_PASS: ${{ secrets.JIRA_PASS }}
+          JIRA_PROJECT: SOMEPROJECT
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_USER: ${{ secrets.JIRA_USER }}
+```
+
+### Using a Sync Label to Gate Syncing
+
+When you only want to sync issues or PRs that have been explicitly approved by a maintainer, use the `sync_label` input together with a job-level `if:` gate. The `if:` guard prevents the job from running at all on unlabeled events (saving runner time and reducing secret exposure), while `sync_label` acts as a second check inside the action itself.
+
+```yaml
+name: Sync labeled issues to Jira
+
+on:
+  issues:
+    types: [opened, edited, closed, reopened, labeled, unlabeled]
+  pull_request_target:
+    types: [opened, edited, closed, reopened, labeled, unlabeled]
+
+concurrency:
+  group: jira-sync-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  sync_to_jira:
+    # Only run when the sync label is present – avoids executing with secrets on every event
+    if: |
+      contains(github.event.issue.labels.*.name, 'sync-to-jira') ||
+      contains(github.event.pull_request.labels.*.name, 'sync-to-jira')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync to Jira project
+        uses: ciscoecosystem/sync-jira-actions@v1
+        with:
+          sync_label: sync-to-jira
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JIRA_PASS: ${{ secrets.JIRA_PASS }}
+          JIRA_PROJECT: SOMEPROJECT
           JIRA_URL: ${{ secrets.JIRA_URL }}
           JIRA_USER: ${{ secrets.JIRA_USER }}
 ```
@@ -196,17 +370,24 @@ on:
       issue-numbers:
         description: "Issue numbers"
         required: true
-concurrency: jira_issues
+
+concurrency:
+  group: jira-sync-manual-${{ github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   sync_issues_to_jira:
     name: Sync issues to Jira
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
       - name: Sync GitHub issues to Jira project
-        uses: espressif/sync-jira-actions@v1
+        uses: ciscoecosystem/sync-jira-actions@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JIRA_PASS: ${{ secrets.JIRA_PASS }}
@@ -224,7 +405,7 @@ This ensures that even items not caught by the automatic sync process can still 
 
 The GitHub to JIRA Issue Sync workflow requires the configuration of specific environment variables and secrets to operate effectively. These settings ensure the correct creation and updating of issues within your JIRA project based on activities in your GitHub repository.
 
-Below is a detailed table outlining the necessary configurations:
+Below is a detailed table outlining the necessary environment variable configurations:
 
 | Variable/Secret   | Description                                                                                  | Requirement |
 | ----------------- | -------------------------------------------------------------------------------------------- | ----------- |
@@ -235,11 +416,120 @@ Below is a detailed table outlining the necessary configurations:
 | `JIRA_ISSUE_TYPE` | Specifies the JIRA issue type for new issues. Defaults to "Task" if not set.                 | Optional    |
 | `JIRA_COMPONENT`  | The name of a JIRA component to add to every synced issue. The component must exist in JIRA. | Optional    |
 
+### Action Inputs
+
+The following inputs are passed via the `with:` block in your workflow step:
+
+| Input                | Default | Description                                                                                                                                  |
+| -------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cron_job`           | —       | Set to `true` to run in cron mode, which scans all open PRs and creates JIRA issues for any that have not yet been synced.                   |
+| `sync_label`         | —       | When set, only issues and PRs that carry this label will be synced to JIRA. All others are silently skipped.                                  |
+| `link_closing_issues`| —       | When set, finds GitHub issues that a PR will close, appends the JIRA key to the PR title, and drives JIRA transitions based on review status. |
+| `minimum_approvals`  | `3`     | Minimum number of PR approvals required before the linked JIRA issue transitions to the "Reviewer Approved" state.                           |
+| `status_field_id`    | `12100` | The custom field ID of the "GitHub Issue Status" field in JIRA. Override if your JIRA instance uses a different field ID.                    |
+| `find_jira_retries`  | `5`     | Number of times the action retries looking up the JIRA issue before deciding to create a new one. Helps avoid race conditions.               |
+
 ### Important Consideration:
 
 - **GitHub Organizational Secrets**: `JIRA_URL`, `JIRA_USER`, `JIRA_PASS` - These secrets are **inherited from the GitHub organizational secrets, as they are common to all projects within the organization**. It is advised not to set these secrets at the individual repository level to avoid conflicts and ensure a unified configuration across all projects.
 
 - **Token as JIRA_PASS**: When using a token for `JIRA_PASS`, prefix the token value with `token:` (e.g., `token:Xyz123**************ABC`). This prefix helps distinguish between password and token types, and it will be removed by the script before making the API call.
+
+---
+
+## Security
+
+This action runs with `GITHUB_TOKEN` and Jira secrets (`JIRA_URL`, `JIRA_USER`, `JIRA_PASS`) in scope. Follow these guidelines to keep your workflows secure.
+
+### Never interpolate workflow outputs into `run:` steps
+
+Workflow outputs (e.g., issue titles or PR bodies) can contain attacker-controlled content. Never interpolate them directly into shell commands:
+
+```yaml
+# ❌ Dangerous – attacker-controlled content reaches the shell
+- run: echo "${{ github.event.issue.title }}"
+
+# ✅ Safe – pass via an environment variable
+- run: echo "$ISSUE_TITLE"
+  env:
+    ISSUE_TITLE: ${{ github.event.issue.title }}
+```
+
+### Do not check out and run untrusted PR code in the same job
+
+Under `pull_request_target`, the workflow runs with full access to repository secrets. **Never** check out the PR head ref and then execute it (build, test, lint, etc.) in the same job — this lets fork authors run arbitrary code with your secrets:
+
+```yaml
+# ❌ Dangerous – fork-controlled code executes with secrets in scope
+- uses: actions/checkout@v4
+  with:
+    ref: ${{ github.event.pull_request.head.sha }}
+- run: npm install && npm test
+```
+
+### Use least-privilege permissions
+
+Add an explicit `permissions:` block to every workflow job to limit the `GITHUB_TOKEN` scope to only what is required:
+
+```yaml
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+```
+
+### Gate on a trusted label
+
+Add a job-level `if:` condition so the workflow does not run with secrets unless a maintainer has applied the sync label. This is more efficient and safer than relying solely on the `sync_label` input inside the action, because the job never starts — and secrets are never loaded — on unlabeled events.
+
+```yaml
+jobs:
+  sync_to_jira:
+    if: |
+      contains(github.event.issue.labels.*.name, 'sync-to-jira') ||
+      contains(github.event.pull_request.labels.*.name, 'sync-to-jira')
+```
+
+Pair this with the `sync_label` input as a defence-in-depth second check inside the action:
+
+```yaml
+      - uses: ciscoecosystem/sync-jira-actions@v1
+        with:
+          sync_label: sync-to-jira
+```
+
+See [Using a Sync Label to Gate Syncing](#using-a-sync-label-to-gate-syncing) for a complete workflow example.
+
+### Use per-item concurrency with `cancel-in-progress`
+
+A single global concurrency group serialises all events into one queue, which can cause a large backlog during event floods. Use a per-issue or per-PR group and cancel superseded runs instead:
+
+```yaml
+concurrency:
+  group: jira-sync-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: true
+```
+
+### Pin to a commit SHA
+
+Referencing a mutable tag (e.g. `@v1`) means a supply-chain compromise of this action could silently affect your workflows. Pin to a specific immutable commit SHA instead:
+
+```yaml
+# ✅ Pinned to a specific commit SHA
+- uses: ciscoecosystem/sync-jira-actions@<commit-sha>
+```
+
+Find the commit SHA for the latest release on the [Releases page](https://github.com/ciscoecosystem/sync-jira-actions/releases).
+
+### Trim `pull_request_target` activity types
+
+The `pull_request_target` event fires on many activity types by default. Restrict it to only the types this action handles to reduce the unnecessary trigger surface:
+
+```yaml
+on:
+  pull_request_target:
+    types: [opened, edited, closed, reopened, labeled, unlabeled]
+```
 
 ---
 
