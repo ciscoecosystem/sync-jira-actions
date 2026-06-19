@@ -333,3 +333,47 @@ def test_issue_comment_created(mock_environment, mock_jira_client, sync_to_jira_
     mock_handler.assert_called_once()
 
 
+# ── debug logging ─────────────────────────────────────────────────────────────
+
+def _base_event():
+    return {
+        'action': 'opened',
+        'issue': {
+            'number': 50, 'title': 'Debug test', 'body': 'body',
+            'user': {'login': 'user'}, 'labels': [],
+            'html_url': 'https://github.com/espressif/esp-idf/issues/50', 'state': 'open',
+        },
+    }
+
+
+def test_payload_not_logged_by_default(mock_environment, mock_jira_client, sync_to_jira_main, monkeypatch, capsys):
+    mock_environment.write_text(json.dumps(_base_event()))
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'issues')
+    monkeypatch.delenv('ACTIONS_RUNNER_DEBUG', raising=False)
+
+    with (
+        patch('sync_jira_actions.sync_to_jira.handle_issue_opened'),
+        patch('sync_jira_actions.sync_to_jira.Github') as mock_gh,
+    ):
+        mock_gh.return_value.get_repo.return_value.has_in_collaborators.return_value = False
+        sync_to_jira_main()
+
+    out = capsys.readouterr().out
+    # The raw JSON payload (identified by a field only present in a pretty-printed dump) must not appear
+    assert '"html_url"' not in out
+
+
+def test_payload_logged_when_debug_enabled(mock_environment, mock_jira_client, sync_to_jira_main, monkeypatch, capsys):
+    mock_environment.write_text(json.dumps(_base_event()))
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'issues')
+    monkeypatch.setenv('ACTIONS_RUNNER_DEBUG', 'true')
+
+    with (
+        patch('sync_jira_actions.sync_to_jira.handle_issue_opened'),
+        patch('sync_jira_actions.sync_to_jira.Github') as mock_gh,
+    ):
+        mock_gh.return_value.get_repo.return_value.has_in_collaborators.return_value = False
+        sync_to_jira_main()
+
+    out = capsys.readouterr().out
+    assert '"html_url"' in out

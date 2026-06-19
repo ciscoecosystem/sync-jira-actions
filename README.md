@@ -429,6 +429,19 @@ The following inputs are passed via the `with:` block in your workflow step:
 | `status_field_id`    | `12100` | The custom field ID of the "GitHub Issue Status" field in JIRA. Override if your JIRA instance uses a different field ID.                    |
 | `find_jira_retries`  | `5`     | Number of times the action retries looking up the JIRA issue before deciding to create a new one. Helps avoid race conditions.               |
 
+### Debug Logging
+
+By default the action suppresses verbose output (full webhook payloads and fetched issue/PR data) to avoid echoing untrusted user-supplied content into workflow logs.
+
+To enable debug output, set `ACTIONS_RUNNER_DEBUG: true` in your workflow's `env:` block or via the GitHub UI ("Re-run jobs" → "Enable debug logging"):
+
+```yaml
+env:
+  ACTIONS_RUNNER_DEBUG: true
+```
+
+> ⚠️ **Do not enable debug logging on public repos that handle untrusted input** (e.g. `pull_request_target` workflows). The full webhook payload — including issue/PR titles, bodies, and comments written by external contributors — will appear in plaintext in your workflow logs.
+
 ### Important Consideration:
 
 - **GitHub Organizational Secrets**: `JIRA_URL`, `JIRA_USER`, `JIRA_PASS` - These secrets are **inherited from the GitHub organizational secrets, as they are common to all projects within the organization**. It is advised not to set these secrets at the individual repository level to avoid conflicts and ensure a unified configuration across all projects.

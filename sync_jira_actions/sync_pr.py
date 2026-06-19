@@ -23,6 +23,7 @@ from github import Github
 from sync_issue import _create_jira_issue
 from sync_issue import _find_jira_issue
 from github_graphql import find_closing_issues, get_pr_review_status
+from logging_utils import redact
 
 # The minimum number of approvals before a PR is ready to merge.
 MINIMUM_APPROVALS = int(os.environ.get('INPUT_MINIMUM_APPROVALS', 3))
@@ -90,7 +91,8 @@ def find_and_link_pr_issues(gh_issue):
     pr_number = int(gh_issue['number'])
     pr_title = gh_issue['title']
     closing_issues = find_closing_issues(token, repo.owner.login, repo.name, pr_number)
-    print(f"Closing Issues: {closing_issues}")
+    closing_numbers = [i.get('number') for i in closing_issues]
+    print(f"Closing Issues: {closing_numbers}")
     jira_keys = []
     for issue in closing_issues:
         title = issue.get('title')
@@ -103,7 +105,7 @@ def find_and_link_pr_issues(gh_issue):
         new_pr_title = re.sub(r'[A-Z]{3,4}-\d+', '', pr_title)
         new_pr_title = re.sub(r'\(\s*\)', '', new_pr_title).strip()
         new_pr_title = f'{new_pr_title} ({" ".join(jira_keys)})'
-        print(f'New PR title: {new_pr_title}')
+        print(f'New PR title: {redact(new_pr_title)}')
         repo.get_issue(pr_number).edit(title=new_pr_title)
     return jira_keys
 
